@@ -35,6 +35,7 @@ const EXTENSION_RESOLUTION: Record<string, string[]> = {
   php: ['.php'],
   ruby: ['.rb'],
   objc: ['.h', '.m', '.mm'],
+  erlang: ['.erl', '.hrl'],
 };
 
 /**
@@ -1163,6 +1164,53 @@ export function resolveViaImport(
       };
     }
     return null;
+  }
+
+  // Erlang -include / -include_lib: file→file imports edge.
+  // The extractor's extractImport returns the quoted path as moduleName
+  // (e.g. "records.hrl", "kernel/include/file.hrl"). Resolve relative
+  // to the including file first, then fall back to project-wide search.
+  if (ref.language === 'erlang' && ref.referenceKind === 'imports') {
+    if (ref.referenceName.includes('.') || ref.referenceName.includes('/')) {
+      // 1. Same-directory match (matches -include behavior: relative to
+      //    the including file's directory).
+      const slash = ref.filePath.lastIndexOf('/');
+      const fromDir = slash >= 0 ? ref.filePath.slice(0, slash) : '';
+      const siblingPath = path.posix.normalize(
+        fromDir ? `${fromDir}/${ref.referenceName}` : ref.referenceName
+      );
+      const siblingBase = siblingPath.split('/').pop()!;
+      const sibling = context
+        .getNodesByName(siblingBase)
+        .find((n) => n.kind === 'file' && n.filePath === siblingPath);
+      if (sibling) {
+        return { original: ref, targetNodeId: sibling.id, confidence: 0.92, resolvedBy: 'import' };
+      }
+
+      // 2. resolveImportPath (uses EXTENSION_RESOLUTION for extension-less lookups)
+      const resolvedPath = resolveImportPath(ref.referenceName, ref.filePath, ref.language, context);
+      if (resolvedPath) {
+        const basename = resolvedPath.split('/').pop()!;
+        const fileNode = context
+          .getNodesByName(basename)
+          .find((n) => n.kind === 'file' && n.filePath === resolvedPath);
+        if (fileNode) {
+          return { original: ref, targetNodeId: fileNode.id, confidence: 0.9, resolvedBy: 'import' };
+        }
+      }
+
+      // 3. Project-wide search by filename (handles include_lib paths where
+      //    the OTP app is vendored under a different root, e.g. deps/kernel/include/file.hrl).
+      const fileName = ref.referenceName.split('/').pop()!;
+      const fileNode = context
+        .getNodesByName(fileName)
+        .find((n) => n.kind === 'file' && n.filePath.endsWith(fileName));
+      if (fileNode) {
+        return { original: ref, targetNodeId: fileNode.id, confidence: 0.8, resolvedBy: 'import' };
+      }
+
+      return null;
+    }
   }
 
   // PHP include/require — resolve the static string path to a file→file
