@@ -109,6 +109,8 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.mm': 'objc',
   '.erl': 'erlang',
   '.hrl': 'erlang',
+  '.app.src': 'erlang',
+  '.app': 'erlang',
   // XML: file-level tracking; the MyBatis extractor matches `<mapper namespace="...">`
   // shape and emits SQL-statement nodes (other XML returns empty).
   '.xml': 'xml',
@@ -126,6 +128,7 @@ export const EXTENSION_MAP: Record<string, Language> = {
 export function isSourceFile(filePath: string): boolean {
   if (isPlayRoutesFile(filePath)) return true; // Play `conf/routes` is extensionless
   if (isShopifyLiquidJson(filePath)) return true; // Shopify OS 2.0 JSON templates / section groups
+  if (filePath.toLowerCase().endsWith('.app.src')) return true; // OTP app metadata
   const dot = filePath.lastIndexOf('.');
   if (dot < 0) return false;
   return filePath.slice(dot).toLowerCase() in EXTENSION_MAP;
@@ -273,6 +276,8 @@ export function detectLanguage(filePath: string, source?: string): Language {
   // Play `conf/routes` has no grammar — route through the no-symbol path; the
   // Play framework resolver extracts route nodes from it.
   if (isPlayRoutesFile(filePath)) return 'yaml';
+  // .app.src is a double extension — lastIndexOf('.') only catches '.src'
+  if (filePath.toLowerCase().endsWith('.app.src')) return 'erlang';
   const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
   // Shopify OS 2.0 JSON templates / section groups → the Liquid extractor (it
   // links each section `"type"` to its `sections/<type>.liquid`).

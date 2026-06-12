@@ -104,6 +104,8 @@ describe('Language Detection', () => {
   it('should detect Erlang files', () => {
     expect(detectLanguage('server.erl')).toBe('erlang');
     expect(detectLanguage('records.hrl')).toBe('erlang');
+    expect(detectLanguage('my_app.app.src')).toBe('erlang');
+    expect(detectLanguage('ebin/cowboy.app')).toBe('erlang');
   });
 
   it('should return unknown for unsupported extensions', () => {
@@ -2929,6 +2931,30 @@ handle_cast(_Msg, State) ->
     // No import node for behaviour (it's now an implements ref)
     const behaviourImports = result.nodes.filter((n) => n.kind === 'import' && n.name === 'gen_server');
     expect(behaviourImports.length).toBe(0);
+  });
+
+  it('should extract OTP application metadata from .app.src files', () => {
+    const code = `{application, my_app, [
+    {description, "My application"},
+    {vsn, "1.0.0"},
+    {applications, [kernel, stdlib, crypto, ranch]},
+    {registered, [my_app_sup]},
+    {modules, [my_app, my_app_sup, my_app_worker]}
+]}.
+`;
+    const result = extractFromSource('src/my_app.app.src', code);
+
+    const moduleNode = result.nodes.find((n) => n.kind === 'module');
+    expect(moduleNode).toBeDefined();
+    expect(moduleNode?.name).toBe('my_app');
+
+    const imports = result.nodes.filter((n) => n.kind === 'import');
+    expect(imports.length).toBeGreaterThanOrEqual(3);
+    const importNames = imports.map((i) => i.name);
+    expect(importNames).toContain('kernel');
+    expect(importNames).toContain('stdlib');
+    expect(importNames).toContain('crypto');
+    expect(importNames).toContain('ranch');
   });
 });
 

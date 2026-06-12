@@ -32,6 +32,45 @@ export const erlangExtractor: LanguageExtractor = {
   visitNode: (node: SyntaxNode, ctx: ExtractorContext): boolean => {
     const nodeType = node.type;
 
+    // .app.src / .app files: top-level tuple {application, Name, [...Props]}.
+    // The Erlang tree-sitter grammar parses these as valid Erlang terms.
+    // Extract the application name and its dependency list.
+    if (nodeType === 'source_file') {
+      const firstChild = node.namedChildren[0];
+      if (firstChild?.type === 'tuple') {
+        const firstAtom = firstChild.namedChildren[0];
+        if (firstAtom?.type === 'atom' && getNodeText(firstAtom, ctx.source) === 'application') {
+          const nameAtom = firstChild.namedChildren[1];
+          if (nameAtom?.type === 'atom') {
+            const appName = getNodeText(nameAtom, ctx.source).replace(/^['"]|['"]$/g, '');
+            if (appName) {
+              ctx.createNode('module', appName, node);
+            }
+          }
+          const propsList = firstChild.namedChildren[2];
+          if (propsList?.type === 'list') {
+            for (const prop of propsList.namedChildren) {
+              if (prop.type !== 'tuple' || prop.namedChildren[0]?.type !== 'atom') continue;
+              const key = getNodeText(prop.namedChildren[0], ctx.source);
+              if (key === 'applications') {
+                const depList = prop.namedChildren[1];
+                if (depList?.type === 'list') {
+                  for (const dep of depList.namedChildren) {
+                    if (dep.type === 'atom') {
+                      const depName = getNodeText(dep, ctx.source).replace(/^['"]|['"]$/g, '');
+                      if (depName) ctx.createNode('import', depName, dep);
+                    }
+                  }
+                }
+              }
+            }
+          }
+          return true;
+        }
+      }
+      return false;
+    }
+
     if (nodeType === 'fun_decl') {
       // fun_decl contains one or more function_clause children
       // (Erlang multi-clause functions). All clauses share the same name.
