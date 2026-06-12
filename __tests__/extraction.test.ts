@@ -101,6 +101,11 @@ describe('Language Detection', () => {
     expect(detectLanguage('stdio.h', '#ifndef STDIO_H\nvoid printf();\n#endif\n')).toBe('c');
   });
 
+  it('should detect Erlang files', () => {
+    expect(detectLanguage('server.erl')).toBe('erlang');
+    expect(detectLanguage('records.hrl')).toBe('erlang');
+  });
+
   it('should return unknown for unsupported extensions', () => {
     expect(detectLanguage('styles.css')).toBe('unknown');
     expect(detectLanguage('data.json')).toBe('unknown');
@@ -2742,8 +2747,137 @@ import 'package:flutter/material.dart';
 });
 
 // =============================================================================
-// Pascal / Delphi Extraction
+// Erlang Extraction
 // =============================================================================
+
+describe('Erlang Extraction', () => {
+  describe('Language detection', () => {
+    it('should detect Erlang files', () => {
+      expect(detectLanguage('server.erl')).toBe('erlang');
+      expect(detectLanguage('records.hrl')).toBe('erlang');
+    });
+  });
+
+  it('should extract module declarations', () => {
+    const code = `
+-module(my_server).
+-behaviour(gen_server).
+
+-export([start_link/0, init/1]).
+
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+init([]) ->
+    {ok, #state{}}.
+`;
+    const result = extractFromSource('my_server.erl', code);
+
+    const moduleNode = result.nodes.find((n) => n.kind === 'module');
+    expect(moduleNode).toBeDefined();
+    expect(moduleNode?.name).toBe('my_server');
+
+    const functions = result.nodes.filter((n) => n.kind === 'function');
+    expect(functions.length).toBeGreaterThanOrEqual(2);
+    expect(functions.some((f) => f.name === 'start_link')).toBe(true);
+    expect(functions.some((f) => f.name === 'init')).toBe(true);
+  });
+
+  it('should extract record declarations', () => {
+    const code = `
+-module(records).
+-record(user, {
+    id :: integer(),
+    name :: string(),
+    email :: string()
+}).
+
+get_user(Id) ->
+    #user{id = Id, name = "test"}.
+`;
+    const result = extractFromSource('records.erl', code);
+
+    const structNode = result.nodes.find((n) => n.kind === 'struct');
+    expect(structNode).toBeDefined();
+    expect(structNode?.name).toBe('user');
+
+    const fields = result.nodes.filter((n) => n.kind === 'field');
+    expect(fields.length).toBe(3);
+    expect(fields.map((f) => f.name).sort()).toEqual(['email', 'id', 'name']);
+  });
+
+  it('should extract type declarations', () => {
+    const code = `
+-module(types).
+-type user_id() :: integer().
+-type user() :: #{id => user_id(), name => string()}.
+-opaque handle() :: term().
+
+make_handle() ->
+    {}.
+`;
+    const result = extractFromSource('types.erl', code);
+
+    const typeNodes = result.nodes.filter((n) => n.kind === 'type_alias');
+    expect(typeNodes.length).toBe(3);
+    expect(typeNodes.map((t) => t.name).sort()).toEqual(['handle', 'user', 'user_id']);
+  });
+
+  it('should extract imports and includes', () => {
+    const code = `
+-module(my_app).
+-include_lib("kernel/include/logger.hrl").
+-include("my_app.hrl").
+-import(lists, [map/2, filter/2]).
+
+main() ->
+    ok.
+`;
+    const result = extractFromSource('my_app.erl', code);
+
+    const imports = result.nodes.filter((n) => n.kind === 'import');
+    expect(imports.length).toBeGreaterThanOrEqual(2);
+    const importNames = imports.map((i) => i.name);
+    expect(importNames.some((n) => n.includes('kernel'))).toBe(true);
+    expect(importNames.some((n) => n.includes('lists'))).toBe(true);
+  });
+
+  it('should extract macros as constants', () => {
+    const code = `
+-module(config).
+-define(SERVER, ?MODULE).
+-define(MAX_RETRIES, 3).
+
+start() ->
+    ok.
+`;
+    const result = extractFromSource('config.erl', code);
+
+    const constants = result.nodes.filter((n) => n.kind === 'constant');
+    expect(constants.length).toBeGreaterThanOrEqual(2);
+    expect(constants.some((c) => c.name === 'SERVER')).toBe(true);
+    expect(constants.some((c) => c.name === 'MAX_RETRIES')).toBe(true);
+  });
+
+  it('should extract multi-clause functions', () => {
+    const code = `
+-module(patterns).
+handle_msg({ping, From}, State) ->
+    From ! {pong, self()},
+    {noreply, State};
+handle_msg({stop, Reason}, State) ->
+    {stop, Reason, State}.
+`;
+    const result = extractFromSource('patterns.erl', code);
+
+    const functions = result.nodes.filter((n) => n.kind === 'function');
+    // The grammar emits separate fun_decl nodes for each clause
+    expect(functions.length).toBe(2);
+    expect(functions.every((f) => f.name === 'handle_msg')).toBe(true);
+  });
+});
+
+
 
 describe('Pascal / Delphi Extraction', () => {
   describe('Language detection', () => {
