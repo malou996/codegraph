@@ -2875,6 +2875,25 @@ handle_msg({stop, Reason}, State) ->
     expect(functions.length).toBe(2);
     expect(functions.every((f) => f.name === 'handle_msg')).toBe(true);
   });
+
+  it('should extract remote calls as qualified module:function references', () => {
+    const code = `
+-module(my_app).
+-export([start/0]).
+
+start() ->
+    gen_server:start_link({local, ?MODULE}, my_server, [], []),
+    gen_server:call(?MODULE, {get, id}),
+    my_db:lookup(42).
+`;
+    const result = extractFromSource('my_app.erl', code);
+
+    const calls = result.unresolvedReferences.filter((r) => r.referenceKind === 'calls');
+    const callNames = calls.map((c) => c.referenceName);
+    expect(callNames).toContain('gen_server:start_link');
+    expect(callNames).toContain('gen_server:call');
+    expect(callNames).toContain('my_db:lookup');
+  });
 });
 
 

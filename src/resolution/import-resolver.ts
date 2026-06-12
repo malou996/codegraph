@@ -1210,6 +1210,14 @@ export function resolveViaImport(
     if (goResult) return goResult;
   }
 
+  // Erlang remote call: `module:function()` — the module name maps directly
+  // to a file (`gen_server` → `gen_server.erl`). No import needed; the
+  // module prefix is the file stem.
+  if (ref.language === 'erlang') {
+    const erlResult = resolveErlangRemoteCall(ref, context);
+    if (erlResult) return erlResult;
+  }
+
   // Java / Kotlin: imports are FQNs (`import com.example.Foo;`) — no
   // resolvable file path the JS/TS-style chain below could follow. Look
   // up the symbol by name and filter to the candidate whose file path
@@ -1789,6 +1797,40 @@ function resolveGoCrossPackageReference(
           resolvedBy: 'import',
         };
       }
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve an Erlang remote call (`module:function`) to the target function
+ * in the corresponding `.erl` file. Erlang module names are the file stem
+ * (`gen_server` → `gen_server.erl`), so we can resolve without imports.
+ */
+function resolveErlangRemoteCall(
+  ref: UnresolvedRef,
+  context: ResolutionContext
+): ResolvedRef | null {
+  const colonIdx = ref.referenceName.indexOf(':');
+  if (colonIdx <= 0) return null;
+  const moduleName = ref.referenceName.substring(0, colonIdx);
+  const funcName = ref.referenceName.substring(colonIdx + 1);
+  if (!funcName) return null;
+
+  // Find functions named `funcName` in Erlang files whose stem is `moduleName`.
+  const candidates = context.getNodesByName(funcName);
+  for (const node of candidates) {
+    if (node.language !== 'erlang') continue;
+    if (node.kind !== 'function') continue;
+    const stem = node.filePath.replace(/\\/g, '/').replace(/\.erl$/, '');
+    const base = stem.includes('/') ? stem.substring(stem.lastIndexOf('/') + 1) : stem;
+    if (base === moduleName) {
+      return {
+        original: ref,
+        targetNodeId: node.id,
+        confidence: 0.9,
+        resolvedBy: 'import',
+      };
     }
   }
   return null;
