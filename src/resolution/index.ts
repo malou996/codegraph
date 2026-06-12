@@ -750,7 +750,12 @@ export class ReferenceResolver {
     }
 
     // Strategy 3: Try name matching
-    const nameResult = this.gateLanguage(matchReference(ref, this.context), ref);
+    // Erlang behaviour implements: skip — the import-resolver already handled
+    // it with module-only matching; the name-matcher would land on a wrong
+    // same-named field/function (a wrong implements edge is worse than none).
+    const nameResult = (ref.language === 'erlang' && ref.referenceKind === 'implements')
+      ? null
+      : this.gateLanguage(matchReference(ref, this.context), ref);
     if (nameResult) {
       candidates.push(nameResult);
     }

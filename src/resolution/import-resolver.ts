@@ -1214,6 +1214,13 @@ export function resolveViaImport(
   // to a file (`gen_server` → `gen_server.erl`). No import needed; the
   // module prefix is the file stem.
   if (ref.language === 'erlang') {
+    if (ref.referenceKind === 'implements') {
+      // Behaviour implements: only match module nodes. If the behaviour isn't
+      // in the project (OTP stdlib), return null WITHOUT falling through to
+      // the name-matcher — a wrong `implements` edge (e.g. module → field
+      // named "supervisor") is worse than none.
+      return resolveErlangBehaviourImplements(ref, context);
+    }
     const erlResult = resolveErlangRemoteCall(ref, context);
     if (erlResult) return erlResult;
   }
@@ -1832,6 +1839,30 @@ function resolveErlangRemoteCall(
         resolvedBy: 'import',
       };
     }
+  }
+  return null;
+}
+
+/**
+ * Resolve an Erlang `-behaviour(Name).` implements reference to the matching
+ * module node in the project. Only matches `module` nodes (not fields,
+ * functions, etc. that happen to share the name). Returns null when the
+ * behaviour is an OTP stdlib module not present in the project.
+ */
+function resolveErlangBehaviourImplements(
+  ref: UnresolvedRef,
+  context: ResolutionContext
+): ResolvedRef | null {
+  const candidates = context.getNodesByName(ref.referenceName);
+  for (const node of candidates) {
+    if (node.language !== 'erlang') continue;
+    if (node.kind !== 'module') continue;
+    return {
+      original: ref,
+      targetNodeId: node.id,
+      confidence: 0.9,
+      resolvedBy: 'exact-match',
+    };
   }
   return null;
 }

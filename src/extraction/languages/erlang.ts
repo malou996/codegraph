@@ -152,9 +152,17 @@ export const erlangExtractor: LanguageExtractor = {
       if (nameNode) {
         const behName = getNodeText(nameNode, ctx.source).replace(/^['"]|['"]$/g, '');
         if (behName) {
-          ctx.createNode('import', behName, node, {
-            signature: `-behaviour(${behName}).`,
-          });
+          // Find the module node for this file to use as the source
+          const modNode = ctx.nodes.find((n) => n.kind === 'module' && n.filePath === ctx.filePath);
+          if (modNode) {
+            ctx.addUnresolvedReference({
+              fromNodeId: modNode.id,
+              referenceName: behName,
+              referenceKind: 'implements',
+              line: node.startPosition.row + 1,
+              column: node.startPosition.column,
+            });
+          }
         }
       }
       return true;

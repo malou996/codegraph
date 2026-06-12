@@ -2894,6 +2894,42 @@ start() ->
     expect(callNames).toContain('gen_server:call');
     expect(callNames).toContain('my_db:lookup');
   });
+
+  it('should emit implements reference for behaviour declarations', () => {
+    const code = `
+-module(my_server).
+-behaviour(gen_server).
+
+-export([init/1, handle_call/3, handle_cast/2]).
+
+init([]) ->
+    {ok, #state{}}.
+
+handle_call(_Request, _From, State) ->
+    {reply, ok, State}.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+`;
+    const result = extractFromSource('my_server.erl', code);
+
+    const modNode = result.nodes.find((n) => n.kind === 'module');
+    expect(modNode).toBeDefined();
+    expect(modNode?.name).toBe('my_server');
+
+    const implRefs = result.unresolvedReferences.filter((r) => r.referenceKind === 'implements');
+    expect(implRefs.length).toBeGreaterThanOrEqual(1);
+    expect(implRefs.some((r) => r.referenceName === 'gen_server')).toBe(true);
+
+    // The fromNodeId should be the module node
+    if (modNode && implRefs.length > 0) {
+      expect(implRefs[0]?.fromNodeId).toBe(modNode.id);
+    }
+
+    // No import node for behaviour (it's now an implements ref)
+    const behaviourImports = result.nodes.filter((n) => n.kind === 'import' && n.name === 'gen_server');
+    expect(behaviourImports.length).toBe(0);
+  });
 });
 
 
