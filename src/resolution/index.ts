@@ -626,6 +626,14 @@ export class ReferenceResolver {
       }
     }
 
+    // Erlang remote call: `module:function` — check the function part so the
+    // pre-filter doesn't drop the ref before resolveErlangRemoteCall sees it.
+    const singleColonIdx = name.indexOf(':');
+    if (singleColonIdx > 0 && name.indexOf('::') !== singleColonIdx) {
+      const funcName = name.substring(singleColonIdx + 1);
+      if (funcName && this.knownNames.has(funcName)) return true;
+    }
+
     // For path-like references (e.g., "snippets/drawer-menu.liquid"), check the filename
     const slashIdx = name.lastIndexOf('/');
     if (slashIdx > 0) {
